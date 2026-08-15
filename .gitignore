@@ -1,0 +1,61 @@
+# Unity generated directories
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Asset Store tools
+**/[Aa]ssets/AssetStoreTools*
+
+# IDE and editor generated files
+.vs/
+.vscode/
+.idea/
+.consulo/
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity-generated metadata for debugging files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Unity crash reports and diagnostics
+sysinfo.txt
+crashlytics-build.properties
+
+# Builds and platform tooling
+.gradle/
+[Ee]xported[Oo]bj/
+*.apk
+*.aab
+*.unitypackage
+
+# Addressables build output
+**/[Aa]ssets/[Ss]treamingAssets/aa.meta
+**/[Aa]ssets/[Ss]treamingAssets/aa/
+
+# Auto-generated package archives
+*.tgz
+
+# Temporary auto-generated test scenes
+**/[Aa]ssets/**/InitTestScene*.unity*
+
+# Burst compiler generated settings
+**/[Aa]ssets/**/BurstAotSettings_*.json
