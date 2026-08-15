@@ -1,4 +1,13 @@
-# 概述
+# ImageToMeshAnim
+
+## 快速跳转 / Quick Navigation
+
+- 中文：[中文文档](#中文文档) · [概述](#概述) · [具体制作过程](#具体制作过程) · [注意事项](#注意事项) · [工具使用说明](#工具使用说明) · [AI Agent 提示词](#ai-agent-提示词)
+- English: [English Documentation](#english-documentation) · [Overview](#overview) · [Production Workflow](#production-workflow) · [Limitations](#limitations) · [Tool Usage](#tool-usage) · [AI Agent Prompt](#ai-agent-prompt)
+
+# 中文文档
+
+## 概述
 
 在很多低成本游戏中，立绘都是纯静态图，因为制作 Spine 或 Live2D 动画需要较高的时间和金钱成本。即使有了 AI，可以很轻易地生成 AI 视频，但在游戏中播放视频仍然相对麻烦。也可以将视频转成序列帧，但高清立绘生成的流畅序列帧体积很大，一次性加载通常难以接受。
 
@@ -203,5 +212,215 @@ positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
 上述提示词默认只负责生成初始姿态 Mesh 和后续姿态 Mesh。如果希望 AI Agent 继续自动完成顶点差值编码、最终 Mesh、材质、Animation Clip、Animator Controller 和 Prefab 等资源，可以根据项目需求在提示词末尾自行追加相应要求。
 
 第一次执行时，AI Agent 通常还需要编写 Mesh 生成、姿态处理、数据校验和 Unity 批处理等中间工具代码，因此耗时可能较长。建议保留这些可复用的工具代码和配置文件，不要在任务结束后删除。后续制作其他角色或动作时，AI Agent 可以直接复用这些文件，生成速度会明显更快。
+
+# English Documentation
+
+## Overview
+
+In many low-budget games, character illustrations are completely static because producing Spine or Live2D animation requires significant time and money. AI can now generate videos easily, but playing video directly in a game is still inconvenient. Converting video into an image sequence is another option, but a smooth sequence of high-resolution character art consumes too much storage and memory to load comfortably.
+
+This article presents a low-cost technique for creating a Live2D-like effect with AI-assisted Mesh generation and vertex animation. It is intended for projects that do not require high-end character animation and offers relatively low memory use, runtime overhead, and production cost. The following Idle animations were created from a single, non-layered character image:
+
+<div align="center">
+  <a href="Doc/MaoNiang_Final.mp4?raw=1"><img src="Doc/MaoNiang_Final.gif" alt="MaoNiang vertex animation demo" width="360"></a>
+  <a href="Doc/Woman.mp4?raw=1"><img src="Doc/Woman.gif" alt="Woman vertex animation demo" width="360"></a>
+</div>
+
+<p align="center"><sub>Click an animated preview to play the original MP4 video.</sub></p>
+
+## Prerequisites
+
+The only initial art asset required is a single image. Other assets are used during production, but they can all be generated from that image; if they already exist, they can be used directly.
+
+FFmpeg and OpenCV are required and can be called through Python. An AI Agent can also help install them.
+
+This project uses Unity for the demonstration, so it is best to prepare a Unity command-line environment and any packages required by the production pipeline. This is important because generating Unity assets may require writing and executing Unity code.
+
+## Core Concept
+
+The core idea is similar to Mesh deformation and Blend Shapes: animation is produced by changing Mesh vertex positions. A Mesh can be generated from the source image with AI assistance or created manually. After a series of pose Meshes has been prepared, each pose's vertex positions are subtracted from those of the preceding pose. The resulting deltas are packed into Mesh vertex channels, and a vertex Shader accumulates those values according to the current animation progress.
+
+# Production Workflow
+
+## Generate the Base Mesh
+
+When generating the Mesh, it is not enough to tell an AI Agent, “Convert this image into a Mesh.” With such a vague instruction, the result may look like this:
+
+<div align="center">
+  <img src="Doc/ErrorMesh.png" alt="An incorrect Mesh containing long triangle edges">
+</div>
+
+This Mesh contains many extremely long triangle edges. Although it appears to separate body regions, it is not suitable for deformation. Moving one local vertex can also move vertices much farther away, causing unnatural full-body motion.
+
+My approach is to define a data structure first, let the AI identify the body regions in the image, and then record the vertex indices belonging to each region. This also provides a stable reference when generating the remaining pose Meshes.
+
+```csharp
+[SerializeField]
+private Mesh _mesh;
+[SerializeField]
+private List<Region> _regionList = new List<Region>();
+
+
+[Serializable]
+public sealed class Region
+{
+    #region fields
+    [SerializeField]
+    private string _regionName;
+    [SerializeField]
+    private int[] _vertexIndices;
+    #endregion
+    
+    #region properties
+    public string Name => _regionName;
+    public IReadOnlyList<int> VertexIndices => _vertexIndices;
+    #endregion
+    
+    #region methods
+    public Region(string name, int[] indices)
+    {
+        _regionName = name;
+        _vertexIndices = indices;
+    }
+    #endregion
+}
+```
+
+Give the Agent explicit topology requirements: use a regular grid with reasonable local density; form small rectangles from adjacent vertices and split each rectangle into two local triangles; never create long triangle edges that cross grid regions, transparent areas, or body parts. A suitable Mesh looks like this:
+
+<div align="center">
+  <img src="Doc/RightMesh.png" alt="A valid Mesh built from a regular local grid">
+</div>
+
+When only the source image is available, the body-region analysis may not match the intended animation. Supplying the target animation as a video or written description gives the AI a more accurate basis for dividing the character into regions.
+
+## Generate Pose Meshes
+
+The next step is to generate the individual pose Meshes. The current implementation supports up to 13 poses, including the initial pose. If an action has a large range of motion or contains back-and-forth movement, interpolating directly from the initial pose to the final pose cannot represent it correctly.
+
+### Hard Requirements for Pose Meshes
+
+Every pose Mesh must be deformed from the same initial Mesh and satisfy all of the following requirements:
+
+- The vertex count must be identical.
+- Vertex indices and ordering must be identical. A given index must always represent the same point on the body in every pose.
+- Triangle topology must be identical. Do not retopologize or add, remove, merge, or reorder vertices.
+- UV0 count, index mapping, and texture correspondence must remain unchanged so every pose samples the original texture correctly.
+- Every pose must use the same object space, origin, orientation, and scale. Do not substitute Transform changes for vertex deformation.
+- The current system records XY displacement only, so the animation must not rely on Z-axis movement.
+
+Matching vertex counts alone does not make two Meshes compatible. If vertex ordering or topology changes, the same index will point to a different part of the body, and the encoded animation will tear, jump, or deform large areas incorrectly. The current encoder checks only the vertex count; the remaining constraints must be enforced while generating the pose Meshes.
+
+The action used here comes from a video generated by AI from a character illustration. The illustration itself was also AI-generated:
+
+<div align="center">
+  <img src="Doc/MaoNiang.png" alt="Original MaoNiang character illustration">
+</div>
+
+<div align="center">
+  <a href="Doc/ActionRefVideo.mp4?raw=1"><img src="Doc/ActionRefVideo.gif" alt="AI-generated action reference video" width="360"></a>
+</div>
+
+<p align="center"><sub>Click the animated preview to play the original MP4 video with audio.</sub></p>
+
+My workflow is to ask the AI to use both the image and the video as references when generating the pose Meshes.
+
+The AI uses FFmpeg, OpenCV, or equivalent tools to analyze the video and identify the actual loop interval. For example, a ten-second video may simply repeat the same 2.5-second action four times. Treating the entire ten seconds as one loop would place the selected key poses at the wrong points in the motion.
+
+After determining the poses to use, the AI can generate a corresponding Mesh for each one. The final pose must be able to transition smoothly back to the initial pose to preserve the loop.
+
+## Calculate Vertex Deltas
+
+For efficient animation, each pose is stored as a vertex-position delta relative to the preceding pose. Because the source is a 2D image, only XY displacement needs to be recorded. Twelve subsequent poses therefore require twelve sets of deltas. The current implementation stores them in Normal, Tangent, UV0.zw, and UV1 through UV4, while UV0.xy remains available for texture sampling.
+
+```hlsl
+float3 keyFrame1 : NORMAL;
+float4 keyFrame2And3 : TANGENT;
+float4 uv0AndKeyFrame4 : TEXCOORD0;
+float4 keyFrame5And6 : TEXCOORD1;
+float4 keyFrame7And8 : TEXCOORD2;
+float4 keyFrame9And10 : TEXCOORD3;
+float4 keyFrame11And12 : TEXCOORD4;
+```
+
+## Calculate Vertex Animation in the Shader
+
+The Shader exposes an `_AnimationProgress` parameter in the range 0 to 1 and transforms the vertices with the following calculation:
+
+```hlsl
+float animationProgress = saturate(_AnimationProgress) * (_AnimationCount + 1.0);
+float keyFrameProgress = min(animationProgress, _AnimationCount);
+positionOS.xy += input.keyFrame1.xy * saturate(keyFrameProgress);
+positionOS.xy += input.keyFrame2And3.xy * saturate(keyFrameProgress - 1.0);
+positionOS.xy += input.keyFrame2And3.zw * saturate(keyFrameProgress - 2.0);
+positionOS.xy += input.uv0AndKeyFrame4.zw * saturate(keyFrameProgress - 3.0);
+positionOS.xy += input.keyFrame5And6.xy * saturate(keyFrameProgress - 4.0);
+positionOS.xy += input.keyFrame5And6.zw * saturate(keyFrameProgress - 5.0);
+positionOS.xy += input.keyFrame7And8.xy * saturate(keyFrameProgress - 6.0);
+positionOS.xy += input.keyFrame7And8.zw * saturate(keyFrameProgress - 7.0);
+positionOS.xy += input.keyFrame9And10.xy * saturate(keyFrameProgress - 8.0);
+positionOS.xy += input.keyFrame9And10.zw * saturate(keyFrameProgress - 9.0);
+positionOS.xy += input.keyFrame11And12.xy * saturate(keyFrameProgress - 10.0);
+positionOS.xy += input.keyFrame11And12.zw * saturate(keyFrameProgress - 11.0);
+float returnProgress = saturate(animationProgress - _AnimationCount);
+positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
+```
+
+The transition from the final pose back to the initial pose is calculated differently from the earlier intervals. Instead of adding another delta, the Shader interpolates from the final accumulated position back to the original vertex position.
+
+# Limitations
+
+The demonstrations currently use a single image without any layer separation. Anyone familiar with Live2D or Spine will know that one flat image is usually insufficient. For example, when vertices at a boundary between clothing and skin are deformed, the clothing can drag the skin with it, causing unnatural muscle distortion or local swelling. Large deformations should be avoided in those areas.
+
+The general solution is to split the image into layers. The same vertex-animation technique remains applicable, but each layer's Mesh must preserve a consistent position relative to the shared origin.
+
+At present, AI still cannot perform reliable image-layer separation in every case. A complete layered workflow can be added when this capability becomes more mature.
+
+Even with these limitations, the technique remains useful. Many games, especially low-budget indie games, still rely on static character illustrations and scene elements. This approach can turn some of those images into animated assets at almost no additional production cost, improving visual presentation and production efficiency.
+
+# Tool Usage
+
+This project includes a Unity Editor tool that encodes the vertex deltas between an initial pose and subsequent pose Meshes into a final Mesh. Use it as follows:
+
+1. Open the `ImageToMeshAnim_Unity` project in Unity.
+2. Select `Tools > Mesh > Encode Vertex Key Frames` from the main menu.
+3. Assign the initial pose Mesh to `Start Pose Mesh`, then add 1 to 12 subsequent pose Meshes to `Animation Pose Meshes` in playback order. Every Mesh must satisfy the hard requirements listed above.
+4. Click `Generate Mesh Asset`, choose a save location, and generate the Mesh asset containing the vertex-animation data.
+5. Create a material with the `ImageToMeshAnim/Vertex Delta` Shader, assign the original texture, and set `_AnimationCount` to the actual number of subsequent pose Meshes.
+6. Assign the generated Mesh and material to a `MeshFilter` and `MeshRenderer`. Animate the material's `_AnimationProgress` parameter from 0 to 1 with an Animation Clip, script, or another system to play the loop.
+
+The sample at `Assets/ImageToMesh/Sample/GeneratedMeshes/MaoNiang` includes the generated Mesh, material, Animation Clip, Animator Controller, and Prefab for reference.
+
+# AI Agent Prompt
+
+Copy the prompt below into an AI Agent that can inspect images and videos and operate a Unity project. Replace the text in angle brackets before using it:
+
+```text
+In the specified Unity project, use one character illustration and one action-reference video to generate a set of topology-identical pose Meshes for a loopable vertex animation. Do not stop at a plan or code snippets. Generate the initial-pose Mesh, the subsequent key-pose Meshes, and validate their consistency.
+
+Inputs:
+- Unity project path: <absolute path to the Unity project>
+- Character illustration path: <absolute path to the PNG image>
+- Action-reference video path: <absolute path to the MP4 video>
+- Character name: <English character name>
+- Output directory: <output directory under Unity Assets>
+
+Requirements:
+1. Inspect the project structure, Unity version, and existing assets first. Reuse ImageMeshRegionConfig and the existing directory structure in the ImageToMeshAnim project instead of creating duplicate data structures.
+2. Analyze the reference video with FFmpeg, OpenCV, or equivalent tools. Identify the true single-loop interval, exclude repeated copies of the loop, and select an initial pose plus no more than 12 subsequent key poses according to meaningful changes in the motion.
+3. Generate the initial Mesh from the character illustration. Use a regular, local grid with reasonable density. Adjacent vertices should form local triangles. Never create long triangle edges that cross transparent areas, body regions, or an excessive distance. Record the vertex indices for the head, hair, torso, arms, hands, legs, clothing, accessories, and other relevant regions.
+4. Every subsequent pose Mesh must be deformed from the initial Mesh and preserve exactly the same vertex count, vertex-index order, triangle topology, UV0 correspondence, object space, origin, orientation, and scale. A vertex index must always represent the same body location in every pose. Do not retopologize, add, remove, merge, or reorder vertices.
+5. The current animation supports XY vertex displacement only. Do not rely on Z-axis movement. Pay particular attention to boundaries between clothing and skin, hair and body, and connected limbs. Avoid exposed gaps, sticking, excessive stretching, local swelling, and texture tearing.
+6. Save the initial and subsequent pose Meshes in playback order with clear, consecutive numbering. Preserve the region data and original texture UVs for every Mesh.
+7. Validate the vertex count, vertex order, triangle indices, UV0 data, and coordinate space of every pose. Report every generated or modified file, important parameters, validation results, and remaining visual limitations. If the input assets are insufficient or the action cannot be reconstructed reliably, explain the exact reason instead of working around it by changing topology or vertex order.
+
+Preserve unrelated existing changes in the project and do not overwrite assets belonging to other characters. If a target file already exists, inspect it first and update only files associated with this character.
+```
+
+By default, this prompt generates only the initial and subsequent pose Meshes. If you want the AI Agent to also perform vertex-delta encoding and create the final Mesh, material, Animation Clip, Animator Controller, and Prefab, append those requirements to the prompt according to your project's needs.
+
+On the first run, the AI Agent will usually need to create reusable intermediate tooling for Mesh generation, pose processing, data validation, and Unity batch operations, so the task may take longer. Keep these reusable scripts and configuration files instead of deleting them when the task finishes. The Agent can reuse them for later characters or actions, making subsequent generation noticeably faster.
+
+That concludes this article. Feedback and discussion are welcome.
 
 以上就是本文的全部内容，欢迎讨论。
