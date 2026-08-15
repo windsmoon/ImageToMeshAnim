@@ -147,8 +147,6 @@ positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
 
 即便如此，本文介绍的方案依然具有实际意义。现在仍有大量游戏，尤其是低成本独立游戏，其立绘和部分场景元素仍然使用静态图片。通过这种方式，可以用几乎零成本将这些图片转换成动态图，从而提升画面表现力和制作效率。
 
-以上就是本文的全部内容，欢迎讨论。
-
 # 工具使用说明
 本工程提供了一个 Unity 编辑器工具，用于将初始姿态和后续姿态 Mesh 的顶点差值编码到最终 Mesh 中。使用步骤如下：
 
@@ -160,3 +158,33 @@ positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
 6. 将生成的 Mesh 和材质赋给 `MeshFilter`、`MeshRenderer`，再通过 Animation、脚本或其他方式让材质参数 `_AnimationProgress` 从 0 变化到 1，即可循环播放动画。
 
 工程中的 `Assets/ImageToMesh/Sample/GeneratedMeshes/MaoNiang` 提供了完整示例，包括生成后的 Mesh、材质、动画片段、Animator Controller 和 Prefab，可用于对照设置。
+
+# AI Agent 提示词
+
+将下面的提示词复制给能够读取图片、视频并操作 Unity 工程的 AI Agent，再替换尖括号中的内容即可使用：
+
+```text
+请在指定 Unity 工程中，将一张角色立绘和一段动作参考视频制作成可循环播放的 Mesh 顶点动画。不要只给出方案或代码片段，请直接完成资源生成、Unity 配置、验证和预览。
+
+输入信息：
+- Unity 工程路径：<Unity 工程绝对路径>
+- 角色立绘路径：<PNG 图片绝对路径>
+- 动作参考视频路径：<MP4 视频绝对路径>
+- 角色名称：<角色英文名称>
+- 输出目录：<Unity Assets 下的输出目录>
+
+执行要求：
+1. 先检查工程结构、Unity 版本和现有工具，优先复用 ImageToMeshAnim 工程中的 ImageMeshRegionConfig、MeshVertexDeltaEncoderWindow 和 ImageToMeshAnim/Vertex Delta Shader，不要重复实现已有功能。
+2. 使用 FFmpeg、OpenCV 或等效工具分析参考视频，识别真正的单次循环区间，排除视频中重复播放的循环，并根据动作变化选择初始姿态和最多 12 个后续关键姿态。
+3. 根据角色立绘生成初始 Mesh。使用规则、局部且密度合理的网格；相邻顶点组成局部三角形，禁止跨透明区域、跨身体部位或跨度过大的长三角形边。记录头部、头发、躯干、手臂、手、腿、服装和饰品等区域及其顶点索引。
+4. 所有后续姿态 Mesh 必须由初始 Mesh 变形得到，并严格保持相同的顶点数量、顶点索引顺序、三角形拓扑、UV0 对应关系、对象坐标空间、原点、朝向和缩放。每个顶点索引在所有姿态中必须始终对应同一个身体位置。不能重新拓扑，也不能增加、删除、合并或重新排列顶点。
+5. 当前动画只允许修改顶点 XY 坐标，不要依赖 Z 轴位移。注意衣服与皮肤、头发与身体、肢体交界处的变形，避免露底、粘连、异常拉伸、局部膨胀和纹理撕裂。
+6. 按动作播放顺序整理姿态 Mesh，使用工程内的顶点差值编码工具生成最终 Mesh。将材质 Shader 设置为 ImageToMeshAnim/Vertex Delta，把 _AnimationCount 设置为后续姿态 Mesh 的实际数量，并创建循环动画，让 _AnimationProgress 从 0 平滑变化到 1。
+7. 创建可直接使用的材质、Animation Clip、Animator Controller 和 Prefab。最终 Prefab 应使用生成后的 Mesh 和原始角色贴图，并能在场景中自动循环播放。
+8. 完成后执行 Unity 编译和资源验证，确认无 Console 错误。逐项检查所有姿态的顶点数、顶点顺序、三角形索引、UV0、坐标空间和动画边界，并检查最后姿态返回初始姿态时是否平滑无跳变。
+9. 输出预览图片或视频，并汇总所有生成或修改的文件、关键参数、验证结果和仍然存在的视觉限制。如果发现输入资源不足或动作无法可靠还原，请明确说明具体原因，不要通过改变拓扑或顶点顺序规避问题。
+
+请保留工程中无关的现有修改，不要覆盖其他角色资源；如果目标文件已经存在，请先检查并只更新本次角色对应的文件。
+```
+
+以上就是本文的全部内容，欢迎讨论。
