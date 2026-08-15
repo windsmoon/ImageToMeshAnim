@@ -5,7 +5,6 @@ Shader "ImageToMeshAnim/Vertex Delta"
         _MainTex("Texture", 2D) = "white" {}
         [IntRange] _AnimationCount("Animation Pose Count", Range(1, 12)) = 12
         _AnimationProgress("Animation Progress", Range(0, 1)) = 0
-        _Color("Color", Range(0, 1)) = 0
     }
 
     SubShader
@@ -39,7 +38,6 @@ Shader "ImageToMeshAnim/Vertex Delta"
             CBUFFER_START(UnityPerMaterial)
                 float _AnimationCount;
                 float _AnimationProgress;
-                float _Color;
             CBUFFER_END
 
             struct Attributes
@@ -52,7 +50,6 @@ Shader "ImageToMeshAnim/Vertex Delta"
                 float4 keyFrame7And8 : TEXCOORD2;
                 float4 keyFrame9And10 : TEXCOORD3;
                 float4 keyFrame11And12 : TEXCOORD4;
-                half4 color : COLOR;
             };
 
             struct Varyings
@@ -90,16 +87,12 @@ Shader "ImageToMeshAnim/Vertex Delta"
 
                 output.positionCS = TransformObjectToHClip(positionOS);
                 output.uv0 = input.uv0AndKeyFrame4.xy;
-                output.color = input.color;
-                output.colorWeight = saturate(_Color);
                 return output;
             }
 
             half4 Frag(Varyings input) : SV_Target
             {
                 half4 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv0);
-                half colorWeight = input.colorWeight * input.color.a;
-                color.rgb = lerp(color.rgb, input.color.rgb, colorWeight);
                 return color;
             }
             ENDHLSL
