@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace GameEditor.ImageToMesh
+namespace Windsmoon.ImageToMesh.Editor
 {
     public sealed class ImageMeshRegionConfig : ScriptableObject
     {

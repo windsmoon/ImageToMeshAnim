@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace GameEditor.ImageToMesh
+namespace Windsmoon.ImageToMesh.Editor
 {
     public sealed class MeshVertexDeltaEncoderWindow : EditorWindow
     {
