@@ -185,4 +185,8 @@ positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
 请保留工程中无关的现有修改，不要覆盖其他角色资源；如果目标文件已经存在，请先检查并只更新本次角色对应的文件。
 ```
 
+上述提示词默认只负责生成初始姿态 Mesh 和后续姿态 Mesh。如果希望 AI Agent 继续自动完成顶点差值编码、最终 Mesh、材质、Animation Clip、Animator Controller 和 Prefab 等资源，可以根据项目需求在提示词末尾自行追加相应要求。
+
+第一次执行时，AI Agent 通常还需要编写 Mesh 生成、姿态处理、数据校验和 Unity 批处理等中间工具代码，因此耗时可能较长。建议保留这些可复用的工具代码和配置文件，不要在任务结束后删除。后续制作其他角色或动作时，AI Agent 可以直接复用这些文件，生成速度会明显更快。
+
 以上就是本文的全部内容，欢迎讨论。
