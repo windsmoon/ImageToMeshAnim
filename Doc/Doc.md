@@ -141,10 +141,22 @@ positionOS.xy = lerp(positionOS.xy, input.positionOS.xy, returnProgress);
 # 注意事项
 目前演示的内容都是基于单张图片生成，没有进行任何图片分层。做过 Live2D 或 Spine 的同学应该知道，单张图片通常是不够的。例如，当衣服和皮肤相连的部位发生顶点变形时，衣服会带着皮肤一起变形，造成肌肉异常扭曲、局部异常膨胀等问题。对于这些区域，需要明确要求 AI 不要进行大幅变形。
 
-解决思路是对图片进行分层。前面介绍的技术在分层后依然适用，但需要让 AI 在生成 Mesh 时保注意各层相对于原点的坐标。
+解决思路是对图片进行分层。前面介绍的技术在分层后依然适用，但需要让 AI 在生成 Mesh 时注意各层相对于原点的坐标。
 
 但目前 AI 还无法很好地完成切图分层，等相关能力更加成熟后，我会再补充后续工作流。
 
 即便如此，本文介绍的方案依然具有实际意义。现在仍有大量游戏，尤其是低成本独立游戏，其立绘和部分场景元素仍然使用静态图片。通过这种方式，可以用几乎零成本将这些图片转换成动态图，从而提升画面表现力和制作效率。
 
 以上就是本文的全部内容，欢迎讨论。
+
+# 工具使用说明
+本工程提供了一个 Unity 编辑器工具，用于将初始姿态和后续姿态 Mesh 的顶点差值编码到最终 Mesh 中。使用步骤如下：
+
+1. 使用 Unity 打开 `ImageToMeshAnim_Unity` 工程。
+2. 在顶部菜单中选择 `Tools > Mesh > Encode Vertex Key Frames`，打开编码工具。
+3. 将初始姿态 Mesh 放入 `Start Pose Mesh`，再按照播放顺序将 1～12 个后续姿态 Mesh 放入 `Animation Pose Meshes`。所有 Mesh 都必须满足前文所述的硬性约束。
+4. 单击 `Generate Mesh Asset`，选择保存位置并生成包含顶点动画数据的 Mesh 资源。
+5. 创建材质并选择 `ImageToMeshAnim/Vertex Delta` Shader，然后设置原始贴图，并将 `_AnimationCount` 设置为后续姿态 Mesh 的实际数量。
+6. 将生成的 Mesh 和材质赋给 `MeshFilter`、`MeshRenderer`，再通过 Animation、脚本或其他方式让材质参数 `_AnimationProgress` 从 0 变化到 1，即可循环播放动画。
+
+工程中的 `Assets/ImageToMesh/Sample/GeneratedMeshes/MaoNiang` 提供了完整示例，包括生成后的 Mesh、材质、动画片段、Animator Controller 和 Prefab，可用于对照设置。
